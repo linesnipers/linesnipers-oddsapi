@@ -1,28 +1,30 @@
-name: Fetch and Store Odds Every 30 Min
+name: Fetch and Store Odds
 
 on:
-  schedule:
-    - cron: "*/30 * * * *"  # Every 30 minutes
   workflow_dispatch:
+  schedule:
+    - cron: "*/30 * * * *"
 
 jobs:
   run-script:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout repo
+      - name: Checkout code
         uses: actions/checkout@v3
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
-          python-version: 3.12
+          python-version: '3.12'
 
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
 
-      - name: Run script
+      - name: Run odds fetcher
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
           ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
-        run: python fetch_and_store_odds.py
+        run: |
+          python fetch_and_store_odds.py
