@@ -36,7 +36,6 @@ def fetch_and_store_odds():
                         "line": outcome.get("point"),
                         "odds": outcome.get("price"),
                         "sportsbook": bookmaker.get("title"),
-                        "game_time": game.get("commence_time")
                     }
 
                     supabase.table("props").insert(data).execute()
