@@ -1,39 +1,62 @@
-from supabase import create_client
 import requests
 import os
+from supabase import create_client, Client
+from datetime import datetime
 
-# Environment variables
-SUPABASE_URL = os.environ["SUPABASE_URL"]
-SUPABASE_KEY = os.environ["SUPABASE_KEY"]
-ODDS_API_KEY = os.environ["ODDS_API_KEY"]
+# Load environment variables
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+THEODDSAPI_KEY = os.getenv("THEODDSAPI_KEY")
 
-# Supabase client
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Initialize Supabase
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# API request
-response = requests.get(
-    "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds",
-    params={"regions": "us", "apiKey": ODDS_API_KEY}
-)
-games = response.json()
+# Define your API endpoint
+url = f"https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds?apiKey={THEODDSAPI_KEY}&regions=us&markets=h2h,spreads,totals&oddsFormat=decimal"
 
-rows_to_insert = []
+# Fetch and filter data
+def fetch_and_store_odds():
+    response = requests.get(url)
 
-for game in games:
-    for bookmaker in game.get("bookmakers", []):
-        for market in bookmaker.get("markets", []):
-            for outcome in market.get("outcomes", []):
-                if outcome.get("name") and outcome.get("price") is not None:
-                    row = {
-                        "player_name": outcome["name"],
-                        "prop_type": market["key"],
-                        "line": outcome["price"],
-                        "sportsbook": bookmaker["title"]
-                    }
-                    # Avoid inserting rows missing line or prop_type
-                    if row["line"] is not None and row["prop_type"]:
-                        rows_to_insert.append(row)
+    if response.status_code != 200:
+        print("Failed to fetch odds:", response.status_code, response.text)
+        return
 
-# Insert into Supabase
-if rows_to_insert:
-    supabase.table("props").insert(rows_to_insert).execute()
+    odds_data = response.json()
+    data = []
+
+    for game in odds_data:
+        teams = game.get("teams", [])
+        commence_time = game.get("commence_time")
+        sites = game.get("bookmakers", [])
+
+        for site in sites:
+            bookmaker = site.get("title")
+            for market in site.get("markets", []):
+                market_type = market.get("key")
+                for outcome in market.get("outcomes", []):
+                    team = outcome.get("name")
+                    line = outcome.get("point")
+
+                    # Skip entries where line is None
+                    if line is None:
+                        continue
+
+                    data.append({
+                        "team": team,
+                        "market": market_type,
+                        "line": line,
+                        "book": bookmaker,
+                        "game_time": commence_time or datetime.utcnow().isoformat()
+                    })
+
+    # Only insert if valid data exists
+    if data:
+        supabase.table("props").insert(data).execute()
+        print(f"Inserted {len(data)} rows into Supabase.")
+    else:
+        print("No valid props found to insert.")
+
+# Run it
+if __name__ == "__main__":
+    fetch_and_store_odds()
