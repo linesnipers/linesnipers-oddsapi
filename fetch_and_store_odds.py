@@ -13,7 +13,7 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 # API parameters
 SPORT = "baseball_mlb"
 REGION = "us"
-MARKET = "player_props"
+MARKET = "h2h,spreads,totals"
 ODDS_API_URL = f"https://api.the-odds-api.com/v4/sports/{SPORT}/odds/?regions={REGION}&markets={MARKET}&apiKey={ODDS_API_KEY}"
 
 def fetch_and_store_odds():
