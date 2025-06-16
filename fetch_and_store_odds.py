@@ -15,7 +15,16 @@ url = f"https://api.the-odds-api.com/v4/sports/baseball_mlb/odds/?regions=us&mar
 
 def fetch_and_store_odds():
     response = requests.get(url)
-    data = response.json()
+
+    try:
+        data = response.json()  # Safely parse JSON
+    except ValueError:
+        print("❌ Failed to decode JSON. Raw response:", response.text)
+        return
+
+    if not isinstance(data, list):
+        print("❌ Unexpected data format from API.")
+        return
 
     props_to_insert = []
 
@@ -30,13 +39,13 @@ def fetch_and_store_odds():
                         "line": outcome.get("point"),
                         "sportsbook": sportsbook
                     }
-                    # Only insert complete props
+                    # Only insert if all fields are filled
                     if all(prop.values()):
                         props_to_insert.append(prop)
 
     if props_to_insert:
         supabase.table("props").insert(props_to_insert).execute()
-        print("✅ Data inserted successfully.")
+        print(f"✅ Inserted {len(props_to_insert)} props.")
     else:
         print("⚠️ No valid props to insert.")
 
