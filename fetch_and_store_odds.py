@@ -1,46 +1,59 @@
-import os
 import requests
-from supabase import create_client
+from supabase import create_client, Client
+import os
 
-# Get environment variables
+# Environment variables (injected by GitHub Actions)
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 ODDS_API_KEY = os.getenv("ODDS_API_KEY")
 
 # Initialize Supabase client
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Define TheOddsAPI endpoint (free tier supports game odds)
-url = "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds"
-params = {
-    "apiKey": ODDS_API_KEY,
-    "regions": "us",
-    "markets": "h2h,spreads,totals",
-    "oddsFormat": "american"
-}
+# Fetch odds data
+response = requests.get(
+    "https://api.the-odds-api.com/v4/sports/upcoming/odds",
+    params={
+        "apiKey": ODDS_API_KEY,
+        "regions": "us",
+        "markets": "h2h,spreads,totals",
+        "oddsFormat": "decimal"
+    }
+)
 
-# Fetch data from API
-response = requests.get(url, params=params)
+# Ensure request succeeded
 if response.status_code != 200:
-    raise Exception(f"API error {response.status_code}: {response.text}")
+    raise Exception(f"Failed to fetch odds: {response.status_code} - {response.text}")
 
-games = response.json()
+data = response.json()
+rows_to_insert = []
 
-# Parse and insert into Supabase
-for game in games:
+# Parse and filter valid rows
+for game in data:
     home_team = game.get("home_team")
     away_team = game.get("away_team")
+    commence_time = game.get("commence_time")
     for bookmaker in game.get("bookmakers", []):
-        sportsbook = bookmaker["title"]
+        sportsbook = bookmaker.get("title")
         for market in bookmaker.get("markets", []):
+            prop_type = market.get("key")
             for outcome in market.get("outcomes", []):
-                data = {
-                    "player_name": outcome.get("name"),  # using team name in free tier
-                    "prop_type": market.get("key"),
-                    "line": outcome.get("point"),
-                    "sportsbook": sportsbook
-                }
-                # Insert to Supabase
-                supabase.table("props").insert(data).execute()
+                player_name = outcome.get("name")
+                line = outcome.get("point")
 
-# 🔁 Manual trigger for GitHub Action workflow
+                # Skip any entry missing required fields
+                if None in [player_name, prop_type, line, sportsbook]:
+                    continue
+
+                rows_to_insert.append({
+                    "player_name": player_name,
+                    "prop_type": prop_type,
+                    "line": line,
+                    "sportsbook": sportsbook
+                })
+
+# Insert to Supabase
+if rows_to_insert:
+    supabase.table("props").insert(rows_to_insert).execute()
+else:
+    print("No valid props to insert.")
