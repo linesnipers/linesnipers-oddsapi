@@ -63,4 +63,6 @@ def fetch_and_store_odds():
         print("No data to insert.")
 
 if __name__ == "__main__":
+   
     fetch_and_store_odds()
+    # Triggering GitHub Action manually
