@@ -1,0 +1,1 @@
+worker: python fetch_and_store_odds.py
