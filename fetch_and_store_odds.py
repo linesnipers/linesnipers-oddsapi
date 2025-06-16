@@ -1,68 +1,46 @@
 import os
 import requests
-from supabase import create_client, Client
+from supabase import create_client
 
-# Load Supabase credentials from environment
+# Get environment variables
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+ODDS_API_KEY = os.getenv("ODDS_API_KEY")
 
-# Load TheOddsAPI credentials
-THEODDS_API_KEY = os.getenv("THEODDS_API_KEY")
-SPORT = "baseball_mlb"
-REGION = "us"
-MARKET = "h2h"  # change to match what you're allowed to access on free tier
+# Initialize Supabase client
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# TheOddsAPI endpoint (free tier sports odds, no props)
-url = f"https://api.the-odds-api.com/v4/sports/{SPORT}/odds"
-
+# Define TheOddsAPI endpoint (free tier supports game odds)
+url = "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds"
 params = {
-    "apiKey": THEODDS_API_KEY,
-    "regions": REGION,
-    "markets": MARKET,
-    "oddsFormat": "decimal"
+    "apiKey": ODDS_API_KEY,
+    "regions": "us",
+    "markets": "h2h,spreads,totals",
+    "oddsFormat": "american"
 }
 
-def fetch_and_store_odds():
-    response = requests.get(url, params=params)
-    
-    if response.status_code != 200:
-        print("Failed to fetch from API:", response.text)
-        return
-    
-    games = response.json()
-    data_to_insert = []
+# Fetch data from API
+response = requests.get(url, params=params)
+if response.status_code != 200:
+    raise Exception(f"API error {response.status_code}: {response.text}")
 
-    for game in games:
-        teams = game.get("teams", [])
-        bookmakers = game.get("bookmakers", [])
+games = response.json()
 
-        for bookmaker in bookmakers:
-            sportsbook = bookmaker.get("title")
-            markets = bookmaker.get("markets", [])
+# Parse and insert into Supabase
+for game in games:
+    home_team = game.get("home_team")
+    away_team = game.get("away_team")
+    for bookmaker in game.get("bookmakers", []):
+        sportsbook = bookmaker["title"]
+        for market in bookmaker.get("markets", []):
+            for outcome in market.get("outcomes", []):
+                data = {
+                    "player_name": outcome.get("name"),  # using team name in free tier
+                    "prop_type": market.get("key"),
+                    "line": outcome.get("point"),
+                    "sportsbook": sportsbook
+                }
+                # Insert to Supabase
+                supabase.table("props").insert(data).execute()
 
-            for market in markets:
-                outcomes = market.get("outcomes", [])
-
-                for outcome in outcomes:
-                    player_name = outcome.get("name")  # using team name as placeholder
-                    line = outcome.get("price")
-
-                    if player_name and line is not None:
-                        data_to_insert.append({
-                            "player_name": player_name,
-                            "prop_type": "Win",  # basic placeholder
-                            "line": line,
-                            "sportsbook": sportsbook
-                        })
-
-    if data_to_insert:
-        print(f"Inserting {len(data_to_insert)} rows into Supabase...")
-        supabase.table("props").insert(data_to_insert).execute()
-    else:
-        print("No data to insert.")
-
-if __name__ == "__main__":
-   
-    fetch_and_store_odds()
-    # Triggering GitHub Action manually
+# 🔁 Manual trigger for GitHub Action workflow
