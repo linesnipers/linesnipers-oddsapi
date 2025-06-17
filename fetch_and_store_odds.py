@@ -1,62 +1,81 @@
 import os
 import requests
 from datetime import datetime, timezone
-from supabase import create_client
+from supabase import create_client, Client
+from dotenv import load_dotenv
+import uuid
 
 # Load environment variables
-SUPABASE_URL = os.environ.get("SUPABASE_URL")
-SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
-ODDS_API_KEY = os.environ.get("ODDS_API_KEY")
+load_dotenv()
 
-# Initialize Supabase client
-supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Supabase config
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Define TheOddsAPI endpoint
-url = "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds"
+# TheOddsAPI config
+API_KEY = os.getenv("ODDS_API_KEY")
+SPORT = "americanfootball_nfl"  # change sport as needed
+REGION = "us"
+MARKETS = "h2h,spreads,totals"
 
-# API request parameters
-params = {
-    "apiKey": ODDS_API_KEY,
-    "regions": "us",
-    "markets": "h2h,spreads,totals",
-    "oddsFormat": "decimal"
-}
+def fetch_and_store_odds():
+    url = f"https://api.the-odds-api.com/v4/sports/{SPORT}/odds"
+    params = {
+        "apiKey": API_KEY,
+        "regions": REGION,
+        "markets": MARKETS
+    }
 
-# Request data
-response = requests.get(url, params=params)
-response.raise_for_status()
-odds_json = response.json()
+    response = requests.get(url, params=params)
 
-# Build data
-data = []
-for game in odds_json:
-    for bookmaker in game.get("bookmakers", []):
-        for market in bookmaker.get("markets", []):
-            for outcome in market.get("outcomes", []):
-                line = outcome.get("point")
-
-                # FINAL strict filter: skip null, empty, non-number, or missing
-                if line is None:
-                    continue
-                try:
-                    line = float(line)
-                except Exception:
-                    continue
-
-                data.append({
-                    "team": outcome.get("name"),
-                    "market": market.get("key"),
-                    "line": line,
-                    "book": bookmaker.get("title"),
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                })
-
-# Insert only if data is clean
-if data:
     try:
-        supabase.table("props").insert(data).execute()
-        print(f"✅ Inserted {len(data)} rows successfully.")
+        odds_json = response.json()
     except Exception as e:
-        print(f"❌ Insert failed: {e}")
-else:
-    print("⚠️ No valid props to insert.")
+        print(f"❌ Failed to parse JSON: {e}")
+        return
+
+    data = []
+
+    for game in odds_json:
+        for bookmaker in game.get("bookmakers", []):
+            for market in bookmaker.get("markets", []):
+                for outcome in market.get("outcomes", []):
+                    team = outcome.get("name")
+                    market_key = market.get("key")
+                    line = outcome.get("point")
+                    book = bookmaker.get("title")
+
+                    # 🛡️ Enhanced null and type protection
+                    if not all([team, market_key, book]):
+                        print(f"⏭️ Skipped due to missing required field: {outcome}")
+                        continue
+                    if line is None or str(line).strip() == "":
+                        print(f"⏭️ Skipped due to missing line: {outcome}")
+                        continue
+                    try:
+                        line = float(line)
+                    except ValueError:
+                        print(f"⏭️ Skipped due to invalid line value: {outcome}")
+                        continue
+
+                    data.append({
+                        "id": str(uuid.uuid4()),
+                        "team": team,
+                        "market": market_key,
+                        "line": line,
+                        "book": book,
+                        "timestamp": datetime.now(timezone.utc).isoformat()
+                    })
+
+    if data:
+        try:
+            supabase.table("props").insert(data).execute()
+            print(f"✅ Successfully inserted {len(data)} records.")
+        except Exception as e:
+            print(f"❌ Supabase insert failed: {e}")
+    else:
+        print("⚠️ No valid data to insert.")
+
+if __name__ == "__main__":
+    fetch_and_store_odds()
