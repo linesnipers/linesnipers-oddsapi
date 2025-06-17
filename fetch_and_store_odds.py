@@ -8,12 +8,10 @@ import uuid
 # Load environment variables
 load_dotenv()
 
-# Supabase config
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Odds API config
 API_KEY = os.getenv("ODDS_API_KEY")
 SPORT = "americanfootball_nfl"
 REGION = "us"
@@ -43,18 +41,21 @@ def fetch_and_store_odds():
                 for outcome in market.get("outcomes", []):
                     team = outcome.get("name")
                     market_key = market.get("key")
-                    line_raw = outcome.get("point")
                     book = bookmaker.get("title")
+                    line_raw = outcome.get("point")
 
-                    # Validate & sanitize line
+                    # ✅ Strict line validation
                     try:
+                        if line_raw is None:
+                            raise ValueError("line_raw is None")
                         line = float(line_raw)
-                    except (TypeError, ValueError):
-                        print(f"⚠️ Skipping invalid line: {line_raw}")
+                    except Exception as e:
+                        print(f"⚠️ Skipping due to invalid 'line': {line_raw} | Error: {e}")
                         continue
 
-                    if not team or not market_key or not book:
-                        print(f"⛔ Missing required fields. Skipping.")
+                    # ✅ Make sure all fields exist
+                    if not all([team, market_key, book]):
+                        print(f"⚠️ Missing required fields, skipping row.")
                         continue
 
                     data.append({
@@ -69,11 +70,11 @@ def fetch_and_store_odds():
     if data:
         try:
             supabase.table("props").insert(data).execute()
-            print(f"✅ Inserted {len(data)} props into Supabase.")
+            print(f"✅ Successfully inserted {len(data)} props.")
         except Exception as e:
             print(f"❌ Supabase insert failed: {e}")
     else:
-        print("⚠️ No valid data to insert.")
+        print("⚠️ No valid props to insert.")
 
 if __name__ == "__main__":
     fetch_and_store_odds()
