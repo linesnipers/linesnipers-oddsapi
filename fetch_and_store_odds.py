@@ -4,8 +4,9 @@ from datetime import datetime, timezone
 from supabase import create_client, Client
 from dotenv import load_dotenv
 import uuid
+import math
 
-# Load environment variables
+# Load .env vars
 load_dotenv()
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
@@ -26,11 +27,10 @@ def fetch_and_store_odds():
     }
 
     response = requests.get(url, params=params)
-
     try:
         odds_json = response.json()
     except Exception as e:
-        print(f"❌ Failed to parse JSON: {e}")
+        print(f"❌ JSON parse failed: {e}")
         return
 
     data = []
@@ -44,16 +44,22 @@ def fetch_and_store_odds():
                     book = bookmaker.get("title")
                     line_raw = outcome.get("point")
 
-                    # ✅ Strict line validation
-                    try:
-                        if line_raw is None:
-                            raise ValueError("line_raw is None")
-                        line = float(line_raw)
-                    except Exception as e:
-                        print(f"⚠️ Skipping due to invalid 'line': {line_raw} | Error: {e}")
+                    # ✅ Strict validation: skip if invalid line
+                    if (
+                        line_raw is None or
+                        isinstance(line_raw, str) and line_raw.strip().lower() in ["", "null", "none"] or
+                        (isinstance(line_raw, float) and math.isnan(line_raw))
+                    ):
+                        print(f"⚠️ Skipping invalid 'line': {line_raw}")
                         continue
 
-                    # ✅ Make sure all fields exist
+                    try:
+                        line = float(line_raw)
+                    except Exception as e:
+                        print(f"⚠️ Skipping uncastable line '{line_raw}': {e}")
+                        continue
+
+                    # Ensure all required fields are present
                     if not all([team, market_key, book]):
                         print(f"⚠️ Missing required fields, skipping row.")
                         continue
@@ -70,7 +76,7 @@ def fetch_and_store_odds():
     if data:
         try:
             supabase.table("props").insert(data).execute()
-            print(f"✅ Successfully inserted {len(data)} props.")
+            print(f"✅ Inserted {len(data)} rows successfully.")
         except Exception as e:
             print(f"❌ Supabase insert failed: {e}")
     else:
