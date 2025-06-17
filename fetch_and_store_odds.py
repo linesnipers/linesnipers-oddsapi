@@ -11,10 +11,10 @@ ODDS_API_KEY = os.environ.get("ODDS_API_KEY")
 # Initialize Supabase client
 supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Define the API endpoint
+# Define TheOddsAPI endpoint
 url = "https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds"
 
-# Parameters for the API request
+# API request parameters
 params = {
     "apiKey": ODDS_API_KEY,
     "regions": "us",
@@ -22,29 +22,27 @@ params = {
     "oddsFormat": "decimal"
 }
 
-# Make the request to TheOddsAPI
+# Request data
 response = requests.get(url, params=params)
 response.raise_for_status()
 odds_json = response.json()
 
-# Prepare data for Supabase
+# Build data
 data = []
-
 for game in odds_json:
     for bookmaker in game.get("bookmakers", []):
         for market in bookmaker.get("markets", []):
             for outcome in market.get("outcomes", []):
                 line = outcome.get("point")
 
-                # Strict filtering: Skip if line is missing, empty, or invalid
-                if not line:
+                # FINAL strict filter: skip null, empty, non-number, or missing
+                if line is None:
                     continue
                 try:
                     line = float(line)
-                except (ValueError, TypeError):
+                except Exception:
                     continue
 
-                # Append valid entry
                 data.append({
                     "team": outcome.get("name"),
                     "market": market.get("key"),
@@ -53,9 +51,12 @@ for game in odds_json:
                     "timestamp": datetime.now(timezone.utc).isoformat()
                 })
 
-# Insert into Supabase
+# Insert only if data is clean
 if data:
-    supabase.table("props").insert(data).execute()
-    print(f"✅ Successfully inserted {len(data)} rows.")
+    try:
+        supabase.table("props").insert(data).execute()
+        print(f"✅ Inserted {len(data)} rows successfully.")
+    except Exception as e:
+        print(f"❌ Insert failed: {e}")
 else:
     print("⚠️ No valid props to insert.")
