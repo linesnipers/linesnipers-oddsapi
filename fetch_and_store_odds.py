@@ -8,14 +8,14 @@ import uuid
 # Load environment variables
 load_dotenv()
 
-# Supabase config
+# Supabase
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# TheOddsAPI config
+# Odds API
 API_KEY = os.getenv("ODDS_API_KEY")
-SPORT = "americanfootball_nfl"  # change sport as needed
+SPORT = "americanfootball_nfl"
 REGION = "us"
 MARKETS = "h2h,spreads,totals"
 
@@ -28,7 +28,6 @@ def fetch_and_store_odds():
     }
 
     response = requests.get(url, params=params)
-
     try:
         odds_json = response.json()
     except Exception as e:
@@ -46,24 +45,22 @@ def fetch_and_store_odds():
                     line = outcome.get("point")
                     book = bookmaker.get("title")
 
-                    # 🛡️ Enhanced null and type protection
-                    if not all([team, market_key, book]):
-                        print(f"⏭️ Skipped due to missing required field: {outcome}")
+                    # Debug: Print what we got
+                    print(f"➡️ team: {team}, market: {market_key}, line: {line}, book: {book}")
+
+                    # FINAL strict null check
+                    if not team or not market_key or not book:
+                        print("⛔ Missing required text field — skipping.")
                         continue
-                    if line is None or str(line).strip() == "":
-                        print(f"⏭️ Skipped due to missing line: {outcome}")
-                        continue
-                    try:
-                        line = float(line)
-                    except ValueError:
-                        print(f"⏭️ Skipped due to invalid line value: {outcome}")
+                    if line is None or not isinstance(line, (int, float)):
+                        print("⛔ Line is missing or invalid — skipping.")
                         continue
 
                     data.append({
                         "id": str(uuid.uuid4()),
                         "team": team,
                         "market": market_key,
-                        "line": line,
+                        "line": float(line),
                         "book": book,
                         "timestamp": datetime.now(timezone.utc).isoformat()
                     })
@@ -71,9 +68,9 @@ def fetch_and_store_odds():
     if data:
         try:
             supabase.table("props").insert(data).execute()
-            print(f"✅ Successfully inserted {len(data)} records.")
+            print(f"✅ Inserted {len(data)} props into Supabase.")
         except Exception as e:
-            print(f"❌ Supabase insert failed: {e}")
+            print(f"❌ Failed inserting into Supabase: {e}")
     else:
         print("⚠️ No valid data to insert.")
 
