@@ -1,62 +1,51 @@
-import requests
 import os
-from supabase import create_client, Client
-from datetime import datetime
+import requests
+from datetime import datetime, timezone
+from supabase import create_client
 
 # Load environment variables
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 THEODDSAPI_KEY = os.getenv("THEODDSAPI_KEY")
 
-# Initialize Supabase
-supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+# Initialize Supabase client
+supabase = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Define your API endpoint
-url = f"https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds?apiKey={THEODDSAPI_KEY}&regions=us&markets=h2h,spreads,totals&oddsFormat=decimal"
-
-# Fetch and filter data
 def fetch_and_store_odds():
+    url = f"https://api.the-odds-api.com/v4/sports/americanfootball_nfl/odds/?regions=us&markets=h2h,spreads&apiKey={THEODDSAPI_KEY}"
     response = requests.get(url)
-
-    if response.status_code != 200:
-        print("Failed to fetch odds:", response.status_code, response.text)
-        return
-
     odds_data = response.json()
+
+    # Filter and prepare data
     data = []
-
     for game in odds_data:
-        teams = game.get("teams", [])
-        commence_time = game.get("commence_time")
-        sites = game.get("bookmakers", [])
-
-        for site in sites:
-            bookmaker = site.get("title")
-            for market in site.get("markets", []):
-                market_type = market.get("key")
+        for bookmaker in game.get("bookmakers", []):
+            for market in bookmaker.get("markets", []):
                 for outcome in market.get("outcomes", []):
-                    team = outcome.get("name")
                     line = outcome.get("point")
-
-                    # Skip entries where line is None
+                    
+                    # Only include props with a valid line
                     if line is None:
+                        continue
+                    try:
+                        float(line)  # make sure it's numeric
+                    except ValueError:
                         continue
 
                     data.append({
-                        "team": team,
-                        "market": market_type,
-                        "line": line,
-                        "book": bookmaker,
-                        "game_time": commence_time or datetime.utcnow().isoformat()
+                        "team": outcome.get("name"),
+                        "market": market.get("key"),
+                        "line": float(line),
+                        "book": bookmaker.get("title"),
+                        "timestamp": datetime.now(timezone.utc).isoformat()
                     })
 
-    # Only insert if valid data exists
+    # Store to Supabase
     if data:
         supabase.table("props").insert(data).execute()
-        print(f"Inserted {len(data)} rows into Supabase.")
+        print(f"✅ Inserted {len(data)} valid props into Supabase.")
     else:
-        print("No valid props found to insert.")
+        print("⚠️ No valid props to insert.")
 
-# Run it
 if __name__ == "__main__":
     fetch_and_store_odds()
